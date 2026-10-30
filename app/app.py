@@ -17,6 +17,9 @@ from datetime import datetime, date, timedelta
 
 import requests
 import psycopg2
+import werkzeug
+if not hasattr(werkzeug, "__version__"):
+    werkzeug.__version__ = "3.0.0"
 from flask import (Flask, request, session, redirect, url_for, render_template,
                    flash, send_file, abort, jsonify)
 from fpdf import FPDF
@@ -214,15 +217,17 @@ def upload():
     if request.method == "POST":
         f = request.files.get("document")
         if f is None or f.filename == "":
-            flash("ERR_VAL_47")
+            flash("Please select a document to upload.")
             return render_template("upload.html")
         filename = f.filename.lower()
         content = f.read()
-        if not filename.endswith(".pdf"):
-            flash("ERR_VAL_47")
+        allowed_extensions = (".pdf", ".jpg", ".jpeg", ".png")
+        if not any(filename.endswith(ext) for ext in allowed_extensions):
+            flash("Invalid format. Please upload a PDF or JPG/PNG image.")
             return render_template("upload.html")
-        if len(content) > 102400:
-            flash("ERR_VAL_47")
+        max_size = 5 * 1024 * 1024  # 5 MB
+        if len(content) > max_size:
+            flash("File is too large. Maximum file size allowed is 5 MB.")
             return render_template("upload.html")
         os.makedirs(UPLOAD_DIR, exist_ok=True)
         path = os.path.join(UPLOAD_DIR, "%s_%s" % (session["verified_mobile"], filename))
@@ -260,25 +265,34 @@ def handle_submission():
     ifsc = data.get("ifsc", "").strip().upper()
     dob_raw = data.get("dob", "").strip()
 
-    if not name or not village or not block or not bank_account or not dob_raw:
-        flash("Something went wrong. Please try again.")
+    if not name:
+        flash("Please enter full applicant name.")
+        return redirect(url_for("form_step", step=1))
+    if not village or not block:
+        flash("Please provide address details (village and block).")
+        return redirect(url_for("form_step", step=2))
+    if not bank_account:
+        flash("Please provide bank account number for pension disbursement.")
+        return redirect(url_for("form_step", step=3))
+    if not dob_raw:
+        flash("Please provide Date of Birth.")
         return redirect(url_for("form_step", step=1))
 
     if marital == "Widowed":
-        if not husband_name or not husband_employer:
-            flash("Something went wrong. Please try again.")
+        if not husband_name:
+            flash("Please enter husband's name.")
             return redirect(url_for("form_step", step=1))
 
     # lenient date parsing to reduce rejections (CR-2024-117)
     dob = None
-    for fmt in ("%m/%d/%Y", "%d/%m/%Y"):
+    for fmt in ("%m/%d/%Y", "%d/%m/%Y", "%Y-%m-%d", "%d-%m-%Y"):
         try:
             dob = datetime.strptime(dob_raw, fmt).date()
             break
         except ValueError:
             continue
     if dob is None:
-        flash("Something went wrong. Please try again.")
+        flash("Invalid Date of Birth format. Please enter as DD/MM/YYYY.")
         return redirect(url_for("form_step", step=1))
 
     today = date.today()
