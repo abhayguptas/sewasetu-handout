@@ -14,5 +14,27 @@
   <tr><th>Submitted</th><td>{{ a[9] }}</td></tr>
   <tr><th>Decided</th><td>{{ a[10] or '-' }}</td></tr>
 </table>
-<p><a href="/ack/{{ app_id }}.pdf">Download Acknowledgment (PDF)</a></p>
+<p>
+  <a href="/ack/{{ app_id }}.pdf"><button class="btn">Download Acknowledgment (PDF)</button></a>
+  {% if a[8] == 'PENDING' %}
+  &nbsp;
+  <a href="/application/{{ app_id }}/edit"><button class="btn" style="background:#0284c7">Edit Application</button></a>
+  {% endif %}
+</p>
+
+{% if edits %}
+<h3 style="margin-top:24px">Audit History of Application Corrections</h3>
+<table class="tbl" style="max-width:640px; font-size:13px">
+  <tr><th>Field</th><th>Original Value</th><th>Updated Value</th><th>Edited By</th><th>Edited On</th></tr>
+  {% for e in edits %}
+  <tr>
+    <td><b>{{ e[0] }}</b></td>
+    <td><span style="color:#666">{{ e[1] }}</span></td>
+    <td><span style="color:#15803d; font-weight:bold">{{ e[2] }}</span></td>
+    <td>{{ e[4] }}</td>
+    <td>{{ e[3].strftime("%d/%m/%Y %H:%M") if e[3] else '-' }}</td>
+  </tr>
+  {% endfor %}
+</table>
+{% endif %}
 {% endblock %}

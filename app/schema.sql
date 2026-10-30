@@ -39,3 +39,14 @@ CREATE TABLE IF NOT EXISTS otps (
 -- Performance indexes for high-throughput citizen lookups and SLA queries
 CREATE INDEX IF NOT EXISTS idx_applications_mobile ON applications(mobile);
 CREATE INDEX IF NOT EXISTS idx_applications_status_submitted ON applications(status, submitted_at);
+
+-- Audit log for citizen-facing application corrections
+CREATE TABLE IF NOT EXISTS application_edits (
+    id             SERIAL PRIMARY KEY,
+    application_id INT REFERENCES applications(id),
+    edited_by      VARCHAR(50),
+    field_name     VARCHAR(50),
+    old_value      TEXT,
+    new_value      TEXT,
+    edited_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);

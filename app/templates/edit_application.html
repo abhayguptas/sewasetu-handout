@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Edit Application {{ a[0] }}</h2>
+<p class="note">You can correct your application details while it is pending review. This updates your file without needing to cancel or submit again.</p>
+<form method="post">
+  <label>Applicant Name (Full Legal Name)</label>
+  <input type="text" name="applicant_name" value="{{ a[1] }}" required>
+
+  <label>Village / Town</label>
+  <input type="text" name="village" value="{{ a[4] }}" required>
+
+  <label>Block</label>
+  <select name="block" required>
+    {% for b in blocks %}
+    <option value="{{ b }}" {% if a[5] == b %}selected{% endif %}>{{ b }}</option>
+    {% endfor %}
+  </select>
+
+  <label>Bank Account Number</label>
+  <input type="text" name="bank_account" value="{{ a[6] }}" required>
+
+  <label>IFSC Code</label>
+  <input type="text" name="ifsc" value="{{ a[7] }}" required>
+
+  <p>
+    <button class="btn" type="submit">Save Changes</button>
+    &nbsp;
+    <a href="/application/{{ app_id }}"><button type="button" class="btn" style="background:#666">Cancel</button></a>
+  </p>
+</form>
+{% endblock %}
