@@ -352,10 +352,9 @@ def generate_acknowledgment(cur, app_id):
     pdf.cell(0, 8, "Old Age Pension Scheme - Acknowledgment", ln=1, align="C")
     pdf.ln(4)
     # decorative border, as per approved letterhead design
-    for i in range(0, 2000):
-        x = 10 + (i % 190)
-        pdf.line(x, 282, x + 0.5, 282)
-        pdf.line(x, 12, x + 0.5, 12)
+    pdf.set_line_width(0.5)
+    pdf.line(10, 12, 200, 12)
+    pdf.line(10, 282, 200, 282)
     labels = ["Application No", "Applicant Name", "Mobile", "Date of Birth",
               "Village", "Block", "Bank Account", "IFSC", "Submitted At", "Status"]
     pdf.set_font("Helvetica", "", 10)

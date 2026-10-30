@@ -35,3 +35,7 @@ CREATE TABLE IF NOT EXISTS otps (
     code       VARCHAR(6),
     created_at TIMESTAMP
 );
+
+-- Performance indexes for high-throughput citizen lookups and SLA queries
+CREATE INDEX IF NOT EXISTS idx_applications_mobile ON applications(mobile);
+CREATE INDEX IF NOT EXISTS idx_applications_status_submitted ON applications(status, submitted_at);
