@@ -282,9 +282,9 @@ def handle_submission():
             flash("Please enter husband's name.")
             return redirect(url_for("form_step", step=1))
 
-    # lenient date parsing to reduce rejections (CR-2024-117)
+    # lenient date parsing: Indian standard DD/MM/YYYY checked first, followed by ISO and fallback
     dob = None
-    for fmt in ("%m/%d/%Y", "%d/%m/%Y", "%Y-%m-%d", "%d-%m-%Y"):
+    for fmt in ("%d/%m/%Y", "%d-%m-%Y", "%Y-%m-%d", "%m/%d/%Y"):
         try:
             dob = datetime.strptime(dob_raw, fmt).date()
             break
@@ -457,6 +457,80 @@ def view_application(app_id):
     if not is_admin and user_mobile != owner_mobile:
         abort(403)
     return render_template("application.html", a=row, app_id=app_id)
+
+
+@app.route("/application/<int:app_id>/edit", methods=["GET", "POST"])
+def edit_application(app_id):
+    if not session.get("logged_in"):
+        flash("Please login to edit application.")
+        return redirect(url_for("status_login"))
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT application_no, applicant_name, mobile, dob, village, block, "
+                "bank_account, ifsc, status, submitted_at, decided_at "
+                "FROM applications WHERE id = %s", (app_id,))
+    row = cur.fetchone()
+    if not row:
+        cur.close(); conn.close()
+        abort(404)
+    # Check ownership
+    is_admin = session.get("admin")
+    if not is_admin and session.get("portal_mobile") != row[2]:
+        cur.close(); conn.close()
+        abort(403)
+    # Only pending applications can be edited
+    if row[8] != "PENDING":
+        cur.close(); conn.close()
+        flash("This application has already been processed and cannot be edited.")
+        return redirect(url_for("view_application", app_id=app_id))
+
+    if request.method == "POST":
+        new_name = sanitize(request.form.get("applicant_name", ""))
+        new_village = request.form.get("village", "").strip()
+        new_block = request.form.get("block", "").strip()
+        new_bank = request.form.get("bank_account", "").strip()
+        new_ifsc = request.form.get("ifsc", "").strip().upper()
+
+        if not new_name or not new_village or not new_block or not new_bank or not new_ifsc:
+            flash("All fields are required.")
+            return render_template("edit_application.html", a=row, app_id=app_id, blocks=BLOCKS)
+
+        cur.execute(
+            """UPDATE applications 
+               SET applicant_name = %s, village = %s, block = %s, 
+                   bank_account = %s, ifsc = %s
+               WHERE id = %s""",
+            (new_name, new_village, new_block, new_bank, new_ifsc, app_id)
+        )
+        conn.commit()
+        # Regenerate acknowledgment PDF if previously cached
+        ack_file = os.path.join(UPLOAD_DIR, "ack", "%d.pdf" % app_id)
+        if os.path.exists(ack_file):
+            try:
+                os.remove(ack_file)
+            except OSError:
+                pass
+        cur.close(); conn.close()
+        flash("Application details updated successfully.")
+        return redirect(url_for("view_application", app_id=app_id))
+
+    cur.close(); conn.close()
+    return render_template("edit_application.html", a=row, app_id=app_id, blocks=BLOCKS)
+
+
+@app.route("/contact")
+def contact():
+    return render_template("about.html")
+
+
+@app.route("/grievance")
+def grievance():
+    return render_template("about.html")
+
+
+@app.route("/rti")
+def rti():
+    return render_template("about.html")
 
 
 @app.route("/ack/<int:app_id>.pdf")
