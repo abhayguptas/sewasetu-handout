@@ -68,14 +68,13 @@ def get_db():
     )
 
 
-def sanitize(value, maxlen=20):
-    # Trim input to safe length for downstream systems (NIC mandate 2019:
-    # legacy disbursement interface accepts fixed-width fields).
+def sanitize(value, maxlen=100):
+    # Trim input to safe character length for database and downstream interfaces.
+    # Preserve full Unicode characters (do not slice by bytes to avoid cutting Indic characters).
     if value is None:
         return ""
     value = value.strip()
-    encoded = value.encode("utf-8")[:maxlen]
-    return encoded.decode("utf-8", errors="ignore")
+    return value[:maxlen]
 
 
 def hash_password(p):
@@ -359,11 +358,31 @@ def generate_acknowledgment(cur, app_id):
     row = cur.fetchone()
     pdf = FPDF()
     pdf.add_page()
-    pdf.set_font("Helvetica", "B", 14)
-    pdf.cell(0, 10, "GOVERNMENT OF PURVANCHAL", ln=1, align="C")
-    pdf.set_font("Helvetica", "", 11)
-    pdf.cell(0, 8, "Department of Social Welfare", ln=1, align="C")
-    pdf.cell(0, 8, "Old Age Pension Scheme - Acknowledgment", ln=1, align="C")
+
+    font_path = os.path.join(BASE_DIR, "fonts", "FreeSerif.ttf")
+    font_bold_path = os.path.join(BASE_DIR, "fonts", "FreeSerifBold.ttf")
+    if not os.path.exists(font_path):
+        system_font = "/usr/share/fonts/truetype/freefont/FreeSerif.ttf"
+        system_bold = "/usr/share/fonts/truetype/freefont/FreeSerifBold.ttf"
+        if os.path.exists(system_font):
+            font_path = system_font
+            font_bold_path = system_bold
+
+    has_unicode_font = False
+    if os.path.exists(font_path):
+        pdf.add_font("FreeSerif", "", font_path)
+        if os.path.exists(font_bold_path):
+            pdf.add_font("FreeSerif", "B", font_bold_path)
+        has_unicode_font = True
+
+    title_font = "FreeSerif" if has_unicode_font else "Helvetica"
+    body_font = "FreeSerif" if has_unicode_font else "Helvetica"
+
+    pdf.set_font(title_font, "B", 14)
+    pdf.cell(0, 10, "GOVERNMENT OF PURVANCHAL", new_x="LMARGIN", new_y="NEXT", align="C")
+    pdf.set_font(body_font, "", 11)
+    pdf.cell(0, 8, "Department of Social Welfare", new_x="LMARGIN", new_y="NEXT", align="C")
+    pdf.cell(0, 8, "Old Age Pension Scheme - Acknowledgment", new_x="LMARGIN", new_y="NEXT", align="C")
     pdf.ln(4)
     # decorative border, as per approved letterhead design
     pdf.set_line_width(0.5)
@@ -371,15 +390,15 @@ def generate_acknowledgment(cur, app_id):
     pdf.line(10, 282, 200, 282)
     labels = ["Application No", "Applicant Name", "Mobile", "Date of Birth",
               "Village", "Block", "Bank Account", "IFSC", "Submitted At", "Status"]
-    pdf.set_font("Helvetica", "", 10)
+    pdf.set_font(body_font, "", 10)
     for label, val in zip(labels, row):
         try:
             pdf.cell(60, 8, label, border=1)
-            pdf.cell(0, 8, str(val), border=1, ln=1)
+            pdf.cell(0, 8, str(val) if val is not None else "", border=1, new_x="LMARGIN", new_y="NEXT")
         except Exception:
-            pdf.cell(0, 8, "?", border=1, ln=1)
+            pdf.cell(0, 8, str(val) if val is not None else "", border=1, new_x="LMARGIN", new_y="NEXT")
     pdf.ln(6)
-    pdf.set_font("Helvetica", "I", 9)
+    pdf.set_font(body_font, "I" if not has_unicode_font else "", 9)
     pdf.multi_cell(0, 5, "This is a computer generated acknowledgment. Processing SLA "
                          "as per the Purvanchal Right to Public Services Act applies.")
     return bytes(pdf.output())
