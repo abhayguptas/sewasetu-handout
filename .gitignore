@@ -1,0 +1,13 @@
+# Byte-compiled / optimized files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Operating System files
+.DS_Store
+
+# Large data and audio files (excluded per submission brief)
+seed/seed.sql
+logs/sewasetu-logs-jan-jun-2026.tar.gz
+logs/sewasetu-logs-jan-jun-2026/
+dc-briefing.mp3
