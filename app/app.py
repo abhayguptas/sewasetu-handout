@@ -9,7 +9,9 @@ Maintenance contract ended 31/01/2026.
 
 import os
 import io
+import re
 import csv
+import uuid
 import random
 import hashlib
 import configparser
@@ -32,6 +34,7 @@ config.read(os.path.join(BASE_DIR, "config", "app.ini"))
 app = Flask(__name__)
 app.secret_key = config.get("app", "secret_key")
 app.config["PERMANENT_SESSION_LIFETIME"] = 300
+app.config["MAX_CONTENT_LENGTH"] = 5 * 1024 * 1024
 
 ADMIN_USERNAME = "admin"
 ADMIN_PASSWORD = "sewasetu@123"
@@ -228,10 +231,32 @@ def upload():
         if len(content) > max_size:
             flash("File is too large. Maximum file size allowed is 5 MB.")
             return render_template("upload.html")
+
+        # Magic byte verification: verify that content matches claimed extension
+        is_valid_magic = False
+        if filename.endswith(".pdf") and content.startswith(b"%PDF-"):
+            is_valid_magic = True
+        elif filename.endswith((".jpg", ".jpeg")) and content.startswith(b"\xff\xd8\xff"):
+            is_valid_magic = True
+        elif filename.endswith(".png") and content.startswith(b"\x89PNG\r\n\x1a\n"):
+            is_valid_magic = True
+
+        if not is_valid_magic:
+            flash("Invalid document content. The file content does not match its claimed type.")
+            return render_template("upload.html")
+
+        # Sanitize against path traversal and store with unique name
+        import uuid
+        safe_base = re.sub(r"[^a-zA-Z0-9_.-]", "_", os.path.basename(f.filename))
+        stored_filename = "%s_%s_%s" % (session["verified_mobile"], uuid.uuid4().hex[:8], safe_base)
         os.makedirs(UPLOAD_DIR, exist_ok=True)
-        path = os.path.join(UPLOAD_DIR, "%s_%s" % (session["verified_mobile"], filename))
+        path = os.path.join(UPLOAD_DIR, stored_filename)
         with open(path, "wb") as out:
             out.write(content)
+        try:
+            os.chmod(path, 0o644)
+        except OSError:
+            pass
         session["doc_path"] = path
         return redirect(url_for("declaration"))
     return render_template("upload.html")
@@ -447,16 +472,23 @@ def view_application(app_id):
                 "bank_account, ifsc, status, submitted_at, decided_at "
                 "FROM applications WHERE id = %s", (app_id,))
     row = cur.fetchone()
-    cur.close(); conn.close()
     if not row:
+        cur.close(); conn.close()
         abort(404)
     # Authorization check: only admin or the application owner can view
     is_admin = session.get("admin")
     owner_mobile = row[2]
     user_mobile = session.get("portal_mobile")
     if not is_admin and user_mobile != owner_mobile:
+        cur.close(); conn.close()
         abort(403)
-    return render_template("application.html", a=row, app_id=app_id)
+
+    # Fetch audit log of edits
+    cur.execute("SELECT field_name, old_value, new_value, edited_at, edited_by "
+                "FROM application_edits WHERE application_id = %s ORDER BY edited_at ASC", (app_id,))
+    edits = cur.fetchall()
+    cur.close(); conn.close()
+    return render_template("application.html", a=row, app_id=app_id, edits=edits)
 
 
 @app.route("/application/<int:app_id>/edit", methods=["GET", "POST"])
@@ -495,6 +527,21 @@ def edit_application(app_id):
             flash("All fields are required.")
             return render_template("edit_application.html", a=row, app_id=app_id, blocks=BLOCKS)
 
+        # Audit history: record changed fields before updating
+        cur.execute("SELECT applicant_name, village, block, bank_account, ifsc FROM applications WHERE id = %s", (app_id,))
+        curr = cur.fetchone()
+        old_name, old_village, old_block, old_bank, old_ifsc = curr
+        editor = "admin" if session.get("admin") else session.get("portal_mobile", "citizen")
+
+        changes = [
+            ("applicant_name", old_name, new_name),
+            ("village", old_village, new_village),
+            ("block", old_block, new_block),
+            ("bank_account", old_bank, new_bank),
+            ("ifsc", old_ifsc, new_ifsc),
+        ]
+
+        # Strictly update allowed fields while preserving submitted_at, mobile, dob, and status
         cur.execute(
             """UPDATE applications 
                SET applicant_name = %s, village = %s, block = %s, 
@@ -502,7 +549,17 @@ def edit_application(app_id):
                WHERE id = %s""",
             (new_name, new_village, new_block, new_bank, new_ifsc, app_id)
         )
+
+        for field, old_val, new_val in changes:
+            if old_val != new_val:
+                cur.execute(
+                    """INSERT INTO application_edits 
+                       (application_id, edited_by, field_name, old_value, new_value, edited_at) 
+                       VALUES (%s, %s, %s, %s, %s, %s)""",
+                    (app_id, editor, field, str(old_val), str(new_val), datetime.now())
+                )
         conn.commit()
+
         # Regenerate acknowledgment PDF if previously cached
         ack_file = os.path.join(UPLOAD_DIR, "ack", "%d.pdf" % app_id)
         if os.path.exists(ack_file):
@@ -531,6 +588,12 @@ def grievance():
 @app.route("/rti")
 def rti():
     return render_template("about.html")
+
+
+@app.route("/downloads/<path:filename>")
+def download_guidelines(filename):
+    flash("Official scheme guidelines and beneficiary details are listed below.")
+    return redirect(url_for("about"))
 
 
 @app.route("/ack/<int:app_id>.pdf")
